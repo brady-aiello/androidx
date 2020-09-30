@@ -97,11 +97,13 @@ import java.io.File
 abstract class ComposeIrTransformTest : AbstractIrTransformTest() {
     open val liveLiteralsEnabled get() = false
     open val sourceInformationEnabled get() = true
+    open val decoysEnabled get() = false
 
     private val extension = ComposeIrGenerationExtension(
         liveLiteralsEnabled,
         sourceInformationEnabled,
-        intrinsicRememberEnabled = true
+        intrinsicRememberEnabled = true,
+        decoysEnabled
     )
     // Some tests require the plugin context in order to perform assertions, for example, a
     // context is required to determine the stability of a type using the StabilityInferencer.
@@ -531,7 +533,9 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
             val analyzer = AnalyzerWithCompilerReport(environment.configuration)
             val deps = jsResolveLibraries(
                 dependencyFiles,
-                messageCollectorLogger(environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]!!)
+                messageCollectorLogger(
+                    environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]!!
+                )
             )
 
             val moduleProvider = JsModuleProvider(environment, deps)
@@ -634,7 +638,8 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
 
         var builtInsModule: ModuleDescriptorImpl? = null
         val descriptors = mutableMapOf<KotlinLibrary, ModuleDescriptorImpl>()
-        private val storageManager: LockBasedStorageManager = LockBasedStorageManager("ModulesStructure")
+        private val storageManager: LockBasedStorageManager =
+            LockBasedStorageManager("ModulesStructure")
 
         private val moduleDependencies: Map<KotlinLibrary, List<KotlinLibrary>> = run {
             val result = mutableMapOf<KotlinLibrary, List<KotlinLibrary>>()
@@ -663,7 +668,10 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
                     descriptors[current] = md
                     if (current.isBuiltIns) builtInsModule = md
                     md.setDependencies(
-                        listOf(md) + moduleDependencies.getValue(current).map { getModuleDescriptor(it) })
+                        listOf(md) + moduleDependencies.getValue(current).map {
+                            getModuleDescriptor(it)
+                        }
+                    )
                 }
             }
     }

@@ -2332,6 +2332,44 @@ class ControlFlowTransformTests : AbstractControlFlowTransformTests() {
     )
 
     @Test
+    fun testCallingAWrapperComposableJS(): Unit = controlFlow(
+        """
+            @Composable
+            fun Test() {
+              W {
+                A()
+              }
+            }
+        """,
+        """
+            @Composable
+            fun Test(%composer: Composer?, %changed: Int) {
+              var %composer = %composer
+              %composer = %composer.startRestartGroup(<>, "C(Test)<W>:Test.kt")
+              if (%changed !== 0 || !%composer.skipping) {
+                W(ComposableSingletons%TestKt.lambda-1, %composer, 0)
+              } else {
+                %composer.skipToGroupEnd()
+              }
+              %composer.endRestartGroup()?.updateScope { %composer: Composer?, %force: Int ->
+                Test(%composer, %changed or 0b0001)
+              }
+            }
+            internal object ComposableSingletons%TestKt {
+              val lambda-1: Function2<Composer, Int, Unit> = composableLambdaInstance(<>, false, "C<A()>:Test.kt") { %composer: Composer?, %changed: Int ->
+                var %composer = %composer
+                if (%changed and 0b1011 xor 0b0010 !== 0 || !%composer.skipping) {
+                  A(%composer, 0)
+                } else {
+                  %composer.skipToGroupEnd()
+                }
+              }::invoke
+            }
+        """,
+        compilation = JsCompilation()
+    )
+
+    @Test
     fun testCallingAnInlineWrapperComposable(): Unit = controlFlow(
         """
             @Composable
