@@ -85,6 +85,7 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.js.resolve.diagnostics.findPsi
 import org.jetbrains.kotlin.load.kotlin.PackagePartClassUtils
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.platform.js.isJs
 import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.resolve.BindingTrace
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
@@ -613,6 +614,12 @@ class ComposerLambdaMemoization(
     ): IrExpression {
         val function = expression.function
         val argumentCount = function.descriptor.valueParameters.size
+        val isJs = context.platform.isJs()
+        if (isJs) {
+            // the composable lambda optimization is ignored on JS
+            return expression
+        }
+
         val useComposableLambdaN = argumentCount > MAX_RESTART_ARGUMENT_COUNT
         val useComposableFactory = collector.hasCaptures && declarationContext.composable
         val restartFunctionFactory =
@@ -633,7 +640,7 @@ class ComposerLambdaMemoization(
         )
 
         (context as IrPluginContextImpl).linker.getDeclaration(restartFactorySymbol)
-        return irBuilder.irCall(restartFactorySymbol).apply {
+        val composableLambdaExpression =  irBuilder.irCall(restartFactorySymbol).apply {
             var index = 0
 
             // first parameter is the composer parameter if we are using the composable factory
@@ -678,6 +685,8 @@ class ComposerLambdaMemoization(
             // block parameter
             putValueArgument(index, expression)
         }
+
+        return composableLambdaExpression
     }
 
     @OptIn(ObsoleteDescriptorBasedAPI::class)

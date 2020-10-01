@@ -65,6 +65,9 @@ if(AndroidXUiPlugin.isMultiplatformEnabled(project)) {
     kotlin {
         android()
         jvm("desktop")
+        js(IR) {
+            browser()
+        }
 
         /*
          * When updating dependencies, make sure to make the an an analogous update in the
@@ -90,10 +93,23 @@ if(AndroidXUiPlugin.isMultiplatformEnabled(project)) {
             desktopMain {
                 dependsOn(jvmMain)
             }
-
-            commonTest.dependencies {
-                implementation(kotlin("test-junit"))
+            jsMain {
+                dependencies {
+                    implementation(kotlin("stdlib-js"))
+                }
+            }
+            jvmTest.dependencies {
+                implementation kotlin("test-junit")
                 implementation(KOTLIN_COROUTINES_TEST)
+            }
+            desktopTest {
+                dependsOn jvmTest
+            }
+            androidTest {
+                dependsOn jvmTest
+            }
+            jsTest.dependencies {
+                implementation kotlin("test-js")
             }
             androidAndroidTest.dependencies {
                 implementation(ANDROIDX_TEST_EXT_JUNIT)
