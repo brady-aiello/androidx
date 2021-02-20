@@ -15,11 +15,10 @@
  */
 
 
+import androidx.build.AndroidXUiPlugin
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 import static androidx.build.dependencies.DependenciesKt.*
-import androidx.build.LibraryGroups
-import androidx.build.LibraryVersions
 import androidx.build.Publish
 
 plugins {
@@ -27,6 +26,8 @@ plugins {
     id("com.android.library")
     id("kotlin-android")
 }
+
+AndroidXUiPlugin.configureJsCompilerIntegrationTests(project)
 
 dependencies {
     implementation(KOTLIN_STDLIB)
@@ -47,6 +48,10 @@ dependencies {
     testImplementation(projectOrArtifact(":compose:ui:ui"))
     testImplementation("androidx.core:core-ktx:1.1.0")
     testImplementation("androidx.activity:activity:1.2.0")
+
+    if (AndroidXUiPlugin.isJsCompilerTestsEnabled(project)) {
+        testJsRuntimeOnly(project(":compose:runtime:runtime"))
+    }
 }
 
 afterEvaluate {

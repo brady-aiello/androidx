@@ -23,9 +23,17 @@ import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContextImpl
 import org.jetbrains.kotlin.backend.common.ir.BuiltinSymbolsBase
 import org.jetbrains.kotlin.backend.common.ir.createParameterDeclarations
+import org.jetbrains.kotlin.backend.common.serialization.mangle.ManglerChecker
+import org.jetbrains.kotlin.backend.common.serialization.mangle.descriptor.Ir2DescriptorManglerAdapter
+import org.jetbrains.kotlin.backend.common.serialization.metadata.DynamicTypeDeserializer
+import org.jetbrains.kotlin.backend.common.serialization.signature.IdSignatureDescriptor
 import org.jetbrains.kotlin.backend.jvm.JvmGeneratorExtensions
 import org.jetbrains.kotlin.backend.jvm.JvmNameProvider
 import org.jetbrains.kotlin.backend.jvm.serialization.JvmIdSignatureDescriptor
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
+import org.jetbrains.kotlin.cli.common.CLIConfigurationKeys
+import org.jetbrains.kotlin.cli.common.messages.AnalyzerWithCompilerReport
+import org.jetbrains.kotlin.cli.js.messageCollectorLogger
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.cli.jvm.config.addJvmClasspathRoots
@@ -33,9 +41,18 @@ import org.jetbrains.kotlin.config.JVMConfigurationKeys
 import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.config.languageVersionSettings
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.descriptors.konan.DeserializedKlibModuleOrigin
 import org.jetbrains.kotlin.descriptors.konan.KlibModuleOrigin
+import org.jetbrains.kotlin.incremental.components.LookupTracker
 import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.backend.js.TopDownAnalyzerFacadeForJSIR
+import org.jetbrains.kotlin.ir.backend.js.emptyLoggingContext
+import org.jetbrains.kotlin.ir.backend.js.isBuiltIns
+import org.jetbrains.kotlin.ir.backend.js.jsResolveLibraries
+import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsIrLinker
+import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsManglerDesc
+import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsManglerIr
 import org.jetbrains.kotlin.ir.backend.jvm.serialization.EmptyLoggingContext
 import org.jetbrains.kotlin.ir.backend.jvm.serialization.JvmIrLinker
 import org.jetbrains.kotlin.ir.backend.jvm.serialization.JvmManglerDesc
@@ -45,6 +62,7 @@ import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.impl.IrFactoryImpl
+import org.jetbrains.kotlin.ir.declarations.persistent.PersistentIrFactory
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.descriptors.IrFunctionFactory
 import org.jetbrains.kotlin.ir.linkage.IrDeserializer
@@ -54,14 +72,24 @@ import org.jetbrains.kotlin.ir.util.ReferenceSymbolTable
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.ir.util.TypeTranslator
 import org.jetbrains.kotlin.ir.util.dump
+import org.jetbrains.kotlin.ir.visitors.acceptVoid
+import org.jetbrains.kotlin.js.config.ErrorTolerancePolicy
+import org.jetbrains.kotlin.js.config.JSConfigurationKeys
+import org.jetbrains.kotlin.konan.util.KlibMetadataFactories
+import org.jetbrains.kotlin.library.KotlinLibrary
+import org.jetbrains.kotlin.library.impl.isKotlinLibrary
+import org.jetbrains.kotlin.library.resolver.KotlinLibraryResolveResult
+import org.jetbrains.kotlin.library.resolver.TopologicalLibraryOrder
 import org.jetbrains.kotlin.load.kotlin.JvmPackagePartSource
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi2ir.Psi2IrConfiguration
 import org.jetbrains.kotlin.psi2ir.Psi2IrTranslator
 import org.jetbrains.kotlin.psi2ir.generators.GeneratorContext
+import org.jetbrains.kotlin.psi2ir.generators.GeneratorExtensions
 import org.jetbrains.kotlin.resolve.AnalyzingUtils
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.serialization.deserialization.descriptors.DeserializedContainerSource
+import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import java.io.File
 
@@ -69,6 +97,7 @@ import java.io.File
 abstract class ComposeIrTransformTest : AbstractIrTransformTest() {
     open val liveLiteralsEnabled get() = false
     open val sourceInformationEnabled get() = true
+
     private val extension = ComposeIrGenerationExtension(
         liveLiteralsEnabled,
         sourceInformationEnabled,
@@ -77,6 +106,7 @@ abstract class ComposeIrTransformTest : AbstractIrTransformTest() {
     // Some tests require the plugin context in order to perform assertions, for example, a
     // context is required to determine the stability of a type using the StabilityInferencer.
     var pluginContext: IrPluginContext? = null
+
     override fun postProcessingStep(
         module: IrModuleFragment,
         generatorContext: GeneratorContext,
@@ -163,13 +193,19 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
         expectedTransformed: String,
         extra: String = "",
         validator: (element: IrElement) -> Unit = { },
-        dumpTree: Boolean = false
+        dumpTree: Boolean = false,
+        compilation: Compilation = JvmCompilation()
     ) {
+        if (!compilation.enabled) {
+            // todo indicate ignore?
+            return
+        }
+
         val files = listOf(
             sourceFile("Test.kt", source.replace('%', '$')),
             sourceFile("Extra.kt", extra.replace('%', '$'))
         )
-        val irModule = generateIrModuleWithJvmResolve(files)
+        val irModule = compilation.compile(files)
         val keySet = mutableListOf<Int>()
         fun IrElement.validate(): IrElement = this.also { validator(it) }
         val actualTransformed = irModule
@@ -344,116 +380,6 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
         return result
     }
 
-    protected fun generateIrModuleWithJvmResolve(files: List<KtFile>): IrModuleFragment {
-        val classPath = createClasspath() + additionalPaths
-        val configuration = newConfiguration()
-        configuration.addJvmClasspathRoots(classPath)
-        configuration.put(JVMConfigurationKeys.IR, true)
-        configuration.put(JVMConfigurationKeys.JVM_TARGET, JvmTarget.JVM_1_8)
-
-        val environment = KotlinCoreEnvironment.createForTests(
-            myTestRootDisposable, configuration, EnvironmentConfigFiles.JVM_CONFIG_FILES
-        ).also { setupEnvironment(it) }
-
-        val mangler = JvmManglerDesc(null)
-
-        val psi2ir = Psi2IrTranslator(
-            environment.configuration.languageVersionSettings,
-            Psi2IrConfiguration(ignoreErrors = false)
-        )
-        val symbolTable = SymbolTable(
-            JvmIdSignatureDescriptor(mangler),
-            IrFactoryImpl,
-            JvmNameProvider
-        )
-
-        val analysisResult = JvmResolveUtil.analyze(files, environment)
-        if (!psi2ir.configuration.ignoreErrors) {
-            analysisResult.throwIfError()
-            AnalyzingUtils.throwExceptionOnErrors(analysisResult.bindingContext)
-        }
-        val extensions = JvmGeneratorExtensions()
-        val generatorContext = psi2ir.createGeneratorContext(
-            analysisResult.moduleDescriptor,
-            analysisResult.bindingContext,
-            symbolTable,
-            extensions = extensions
-        )
-        val stubGenerator = DeclarationStubGenerator(
-            generatorContext.moduleDescriptor,
-            generatorContext.symbolTable,
-            generatorContext.irBuiltIns.languageVersionSettings,
-            extensions
-        )
-        val functionFactory = IrFunctionFactory(
-            generatorContext.irBuiltIns,
-            generatorContext.symbolTable
-        )
-        val frontEndContext = object : TranslationPluginContext {
-            override val moduleDescriptor: ModuleDescriptor
-                get() = generatorContext.moduleDescriptor
-            override val bindingContext: BindingContext
-                get() = generatorContext.bindingContext
-            override val symbolTable: ReferenceSymbolTable
-                get() = symbolTable
-            override val typeTranslator: TypeTranslator
-                get() = generatorContext.typeTranslator
-            override val irBuiltIns: IrBuiltIns
-                get() = generatorContext.irBuiltIns
-        }
-        generatorContext.irBuiltIns.functionFactory = functionFactory
-        val irLinker = JvmIrLinker(
-            generatorContext.moduleDescriptor,
-            EmptyLoggingContext,
-            generatorContext.irBuiltIns,
-            generatorContext.symbolTable,
-            functionFactory,
-            frontEndContext,
-            stubGenerator,
-            mangler
-        )
-
-        generatorContext.moduleDescriptor.allDependencyModules.map {
-            val capability = it.getCapability(KlibModuleOrigin.CAPABILITY)
-            val kotlinLibrary = (capability as? DeserializedKlibModuleOrigin)?.library
-            irLinker.deserializeIrModuleHeader(it, kotlinLibrary)
-        }
-
-        val irProviders = listOf(irLinker)
-
-        val symbols = BuiltinSymbolsBase(
-            generatorContext.irBuiltIns,
-            generatorContext.moduleDescriptor.builtIns,
-            generatorContext.symbolTable.lazyWrapper
-        )
-
-        ExternalDependenciesGenerator(
-            generatorContext.symbolTable,
-            irProviders,
-            generatorContext.languageVersionSettings
-        ).generateUnboundSymbolsAsDependencies()
-
-        psi2ir.addPostprocessingStep { module ->
-            val old = stubGenerator.unboundSymbolGeneration
-            try {
-                stubGenerator.unboundSymbolGeneration = true
-                postProcessingStep(module, generatorContext, irLinker, symbols)
-            } finally {
-                stubGenerator.unboundSymbolGeneration = old
-            }
-        }
-
-        val irModuleFragment = psi2ir.generateModuleFragment(
-            generatorContext,
-            files,
-            irProviders,
-            IrGenerationExtension.getInstances(myEnvironment!!.project),
-            expectDescriptorToSymbol = null
-        )
-        irLinker.postProcess()
-        return irModuleFragment
-    }
-
     fun facadeClassGenerator(
         generatorContext: GeneratorContext,
         source: DeserializedContainerSource
@@ -466,5 +392,284 @@ abstract class AbstractIrTransformTest : AbstractCodegenTest() {
         }.also {
             it.createParameterDeclarations()
         }
+    }
+
+    inner class JvmCompilation : Compilation {
+        override val enabled: Boolean = true
+
+        override fun compile(files: List<KtFile>): IrModuleFragment {
+            val classPath = createClasspath() + additionalPaths
+            val configuration = newConfiguration()
+            configuration.addJvmClasspathRoots(classPath)
+            configuration.put(JVMConfigurationKeys.IR, true)
+            configuration.put(JVMConfigurationKeys.JVM_TARGET, JvmTarget.JVM_1_8)
+
+            val environment = KotlinCoreEnvironment.createForTests(
+                myTestRootDisposable, configuration, EnvironmentConfigFiles.JVM_CONFIG_FILES
+            ).also { setupEnvironment(it) }
+
+            val mangler = JvmManglerDesc(null)
+
+            val psi2ir = Psi2IrTranslator(
+                environment.configuration.languageVersionSettings,
+                Psi2IrConfiguration(ignoreErrors = false)
+            )
+            val symbolTable = SymbolTable(
+                JvmIdSignatureDescriptor(mangler),
+                IrFactoryImpl,
+                JvmNameProvider
+            )
+
+            val analysisResult = JvmResolveUtil.analyze(files, environment)
+            if (!psi2ir.configuration.ignoreErrors) {
+                analysisResult.throwIfError()
+                AnalyzingUtils.throwExceptionOnErrors(analysisResult.bindingContext)
+            }
+            val extensions = JvmGeneratorExtensions()
+            val generatorContext = psi2ir.createGeneratorContext(
+                analysisResult.moduleDescriptor,
+                analysisResult.bindingContext,
+                symbolTable,
+                extensions = extensions
+            )
+            val stubGenerator = DeclarationStubGenerator(
+                generatorContext.moduleDescriptor,
+                generatorContext.symbolTable,
+                generatorContext.irBuiltIns.languageVersionSettings,
+                extensions
+            )
+            val functionFactory = IrFunctionFactory(
+                generatorContext.irBuiltIns,
+                generatorContext.symbolTable
+            )
+            val frontEndContext = object : TranslationPluginContext {
+                override val moduleDescriptor: ModuleDescriptor
+                    get() = generatorContext.moduleDescriptor
+                override val bindingContext: BindingContext
+                    get() = generatorContext.bindingContext
+                override val symbolTable: ReferenceSymbolTable
+                    get() = symbolTable
+                override val typeTranslator: TypeTranslator
+                    get() = generatorContext.typeTranslator
+                override val irBuiltIns: IrBuiltIns
+                    get() = generatorContext.irBuiltIns
+            }
+            generatorContext.irBuiltIns.functionFactory = functionFactory
+            val irLinker = JvmIrLinker(
+                generatorContext.moduleDescriptor,
+                EmptyLoggingContext,
+                generatorContext.irBuiltIns,
+                generatorContext.symbolTable,
+                functionFactory,
+                frontEndContext,
+                stubGenerator,
+                mangler
+            )
+
+            generatorContext.moduleDescriptor.allDependencyModules.map {
+                val capability = it.getCapability(KlibModuleOrigin.CAPABILITY)
+                val kotlinLibrary = (capability as? DeserializedKlibModuleOrigin)?.library
+                irLinker.deserializeIrModuleHeader(it, kotlinLibrary)
+            }
+
+            val irProviders = listOf(irLinker)
+
+            val symbols = BuiltinSymbolsBase(
+                generatorContext.irBuiltIns,
+                generatorContext.moduleDescriptor.builtIns,
+                generatorContext.symbolTable.lazyWrapper
+            )
+
+            ExternalDependenciesGenerator(
+                generatorContext.symbolTable,
+                irProviders,
+                generatorContext.languageVersionSettings
+            ).generateUnboundSymbolsAsDependencies()
+
+            psi2ir.addPostprocessingStep { module ->
+                val old = stubGenerator.unboundSymbolGeneration
+                try {
+                    stubGenerator.unboundSymbolGeneration = true
+                    postProcessingStep(module, generatorContext, irLinker, symbols)
+                } finally {
+                    stubGenerator.unboundSymbolGeneration = old
+                }
+            }
+
+            val irModuleFragment = psi2ir.generateModuleFragment(
+                generatorContext,
+                files,
+                irProviders,
+                IrGenerationExtension.getInstances(myEnvironment!!.project),
+                expectDescriptorToSymbol = null
+            )
+            irLinker.postProcess()
+            return irModuleFragment
+        }
+    }
+
+    inner class JsCompilation(private val verifySignatures: Boolean = true) : Compilation {
+        private val classpath = System.getProperty("androidx.compose.js.classpath").orEmpty()
+            .split(":")
+            .map { File(it) }
+            .filter { isKotlinLibrary(it) }
+
+        override val enabled: Boolean = classpath.isNotEmpty()
+
+        override fun compile(files: List<KtFile>): IrModuleFragment {
+            val configuration = newConfiguration()
+            val dependencyFiles = classpath.map { it.absolutePath }
+            configuration.put(JSConfigurationKeys.LIBRARIES, dependencyFiles)
+
+            val environment = KotlinCoreEnvironment.createForTests(
+                myTestRootDisposable,
+                configuration,
+                EnvironmentConfigFiles.JS_CONFIG_FILES
+            )
+            setupEnvironment(environment)
+
+            val analyzer = AnalyzerWithCompilerReport(environment.configuration)
+            val deps = jsResolveLibraries(
+                dependencyFiles,
+                messageCollectorLogger(environment.configuration[CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY]!!)
+            )
+
+            val moduleProvider = JsModuleProvider(environment, deps)
+
+            analyzer.analyzeAndReport(files) {
+                TopDownAnalyzerFacadeForJSIR.analyzeFiles(
+                    files,
+                    environment.project,
+                    environment.configuration,
+                    deps.getFullList().map { moduleProvider.getModuleDescriptor(it) },
+                    friendModuleDescriptors = emptyList(),
+                    thisIsBuiltInsModule = false,
+                    customBuiltInsModule = moduleProvider.builtInsModule
+                )
+            }
+
+            val result = analyzer.analysisResult
+            TopDownAnalyzerFacadeForJSIR.checkForErrors(
+                files,
+                result.bindingContext,
+                ErrorTolerancePolicy.NONE
+            )
+            val mangler = JsManglerDesc
+            val signaturer = IdSignatureDescriptor(mangler)
+
+            val psi2Ir = Psi2IrTranslator(
+                configuration.languageVersionSettings,
+                Psi2IrConfiguration(),
+            )
+
+            val symbolTable = SymbolTable(signaturer, PersistentIrFactory)
+
+            val generatorContext = psi2Ir.createGeneratorContext(
+                result.moduleDescriptor,
+                result.bindingContext,
+                symbolTable,
+                GeneratorExtensions()
+            )
+
+            val irBuiltIns = generatorContext.irBuiltIns
+            val functionFactory = IrFunctionFactory(irBuiltIns, generatorContext.symbolTable)
+            irBuiltIns.functionFactory = functionFactory
+
+            val irLinker = JsIrLinker(
+                generatorContext.moduleDescriptor,
+                emptyLoggingContext,
+                generatorContext.irBuiltIns,
+                generatorContext.symbolTable,
+                functionFactory,
+                JsIrLinker.JsFePluginContext(
+                    result.moduleDescriptor,
+                    result.bindingContext,
+                    generatorContext.symbolTable,
+                    generatorContext.typeTranslator,
+                    generatorContext.irBuiltIns
+                ),
+            )
+
+            deps.getFullList(TopologicalLibraryOrder).forEach {
+                irLinker.deserializeOnlyHeaderModule(moduleProvider.getModuleDescriptor(it), it)
+            }
+
+            val builtinSymbolsBase = BuiltinSymbolsBase(
+                irBuiltIns,
+                irBuiltIns.builtIns,
+                generatorContext.symbolTable
+            )
+
+            psi2Ir.addPostprocessingStep {
+                postProcessingStep(it, generatorContext, irLinker, builtinSymbolsBase)
+            }
+
+            val moduleFragment = psi2Ir.generateModuleFragment(
+                generatorContext,
+                files,
+                listOf(irLinker),
+                emptyList(),
+            )
+
+            if (verifySignatures) {
+                moduleFragment.acceptVoid(
+                    ManglerChecker(JsManglerIr, Ir2DescriptorManglerAdapter(JsManglerDesc))
+                )
+            }
+
+            irLinker.postProcess()
+
+            return moduleFragment
+        }
+    }
+
+    private class JsModuleProvider(
+        private val environment: KotlinCoreEnvironment,
+        private val deps: KotlinLibraryResolveResult
+    ) {
+        private val JsFactories = KlibMetadataFactories(
+            { object : KotlinBuiltIns(it) {} },
+            DynamicTypeDeserializer
+        )
+
+        var builtInsModule: ModuleDescriptorImpl? = null
+        val descriptors = mutableMapOf<KotlinLibrary, ModuleDescriptorImpl>()
+        private val storageManager: LockBasedStorageManager = LockBasedStorageManager("ModulesStructure")
+
+        private val moduleDependencies: Map<KotlinLibrary, List<KotlinLibrary>> = run {
+            val result = mutableMapOf<KotlinLibrary, List<KotlinLibrary>>()
+
+            deps.forEach { klib, _ ->
+                val dependencies = deps.filterRoots { it.library == klib }.getFullList(
+                    TopologicalLibraryOrder
+                )
+                result[klib] = dependencies.minus(klib)
+            }
+            result
+        }
+
+        fun getModuleDescriptor(current: KotlinLibrary): ModuleDescriptorImpl =
+            if (current in descriptors) {
+                descriptors.getValue(current)
+            } else {
+                JsFactories.DefaultDeserializedDescriptorFactory.createDescriptorOptionalBuiltIns(
+                    current,
+                    environment.configuration.languageVersionSettings,
+                    storageManager,
+                    builtInsModule?.builtIns,
+                    packageAccessHandler = null,
+                    lookupTracker = LookupTracker.DO_NOTHING
+                ).also { md ->
+                    descriptors[current] = md
+                    if (current.isBuiltIns) builtInsModule = md
+                    md.setDependencies(
+                        listOf(md) + moduleDependencies.getValue(current).map { getModuleDescriptor(it) })
+                }
+            }
+    }
+
+    interface Compilation {
+        val enabled: Boolean
+        fun compile(files: List<KtFile>): IrModuleFragment
     }
 }
