@@ -175,10 +175,14 @@ internal lateinit var kotlinCoroutinesVersion: String
 
 val KOTLIN_COROUTINES_ANDROID
     get() = "org.jetbrains.kotlinx:kotlinx-coroutines-android:$kotlinCoroutinesVersion"
+val KOTLIN_COROUTINES_JS
+    get() = "org.jetbrains.kotlinx:kotlinx-coroutines-core-js:$kotlinCoroutinesVersion"
 val KOTLIN_COROUTINES_SWING
     get() = "org.jetbrains.kotlinx:kotlinx-coroutines-swing:$kotlinCoroutinesVersion"
 val KOTLIN_COROUTINES_CORE
     get() = "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinCoroutinesVersion"
+val KOTLIN_COROUTINES_CORE_NATIVE_MT
+    get() = "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.1-native-mt"
 val KOTLIN_COROUTINES_GUAVA
     get() = "org.jetbrains.kotlinx:kotlinx-coroutines-guava:$kotlinCoroutinesVersion"
 val KOTLIN_COROUTINES_TEST

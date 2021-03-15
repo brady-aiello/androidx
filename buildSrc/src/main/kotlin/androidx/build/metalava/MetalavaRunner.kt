@@ -183,32 +183,34 @@ fun generateApi(
     workerExecutor: WorkerExecutor,
     pathToManifest: String? = null
 ) {
-    generateApi(
-        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
-        apiLocation, GenerateApiMode.PublicApi, apiLintMode, workerExecutor, pathToManifest
-    )
-    generateApi(
-        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
-        apiLocation, GenerateApiMode.ExperimentalApi, apiLintMode, workerExecutor, pathToManifest
-    )
-
-    val restrictedAPIMode = if (includeRestrictToLibraryGroupApis) {
-        GenerateApiMode.AllRestrictedApis
-    } else {
-        GenerateApiMode.RestrictToLibraryGroupPrefixApis
-    }
-    generateApi(
-        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
-        apiLocation, restrictedAPIMode, ApiLintMode.Skip, workerExecutor
-    )
-    workerExecutor.await()
-    val removedApiFile = apiLocation.removedApiFile
-    if (removedApiFile.exists()) {
-        if (removedApiFile.readText().split("\n", limit = 3).count() < 3) {
-            // If the removedApi file is just a header (one "\n"), then we treat it as empty
-            removedApiFile.delete()
-        }
-    }
+    println("$metalavaClasspath $files $apiLocation $apiLintMode " +
+        "$includeRestrictToLibraryGroupApis $workerExecutor $pathToManifest")
+//    generateApi(
+//        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
+//        apiLocation, GenerateApiMode.PublicApi, apiLintMode, workerExecutor, pathToManifest
+//    )
+//    generateApi(
+//        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
+//        apiLocation, GenerateApiMode.ExperimentalApi, apiLintMode, workerExecutor, pathToManifest
+//    )
+//
+//    val restrictedAPIMode = if (includeRestrictToLibraryGroupApis) {
+//        GenerateApiMode.AllRestrictedApis
+//    } else {
+//        GenerateApiMode.RestrictToLibraryGroupPrefixApis
+//    }
+//    generateApi(
+//        metalavaClasspath, files.bootClasspath, files.dependencyClasspath, files.sourcePaths.files,
+//        apiLocation, restrictedAPIMode, ApiLintMode.Skip, workerExecutor
+//    )
+//    workerExecutor.await()
+//    val removedApiFile = apiLocation.removedApiFile
+//    if (removedApiFile.exists()) {
+//        if (removedApiFile.readText().split("\n", limit = 3).count() < 3) {
+//            // If the removedApi file is just a header (one "\n"), then we treat it as empty
+//            removedApiFile.delete()
+//        }
+//    }
 }
 
 // Gets arguments for generating the specified api file
