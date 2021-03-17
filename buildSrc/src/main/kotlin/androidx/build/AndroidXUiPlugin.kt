@@ -34,6 +34,7 @@ import org.gradle.kotlin.dsl.named
 import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 import org.jetbrains.kotlin.gradle.dsl.KotlinJsCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.plugin.KotlinBasePluginWrapper
 import org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPluginWrapper
@@ -76,18 +77,27 @@ class AndroidXUiPlugin : Plugin<Project> {
                     }
 
                     val configure: (KotlinCompile<*>) -> Unit = { compile ->
+                        println("compile type ${compile}")
                         // TODO(b/157230235): remove when this is enabled by default
-                        compile.kotlinOptions.freeCompilerArgs +=
-                            "-Xopt-in=kotlin.RequiresOptIn"
+
+
                         compile.inputs.files({ kotlinPlugin.files })
                             .withPropertyName("composeCompilerExtension")
                             .withNormalizer(ClasspathNormalizer::class.java)
+                        println("a1")
+
+//                        compile.kotlinOptions.freeCompilerArgs +=
+//                            "-Xopt-in=kotlin.RequiresOptIn"
+
+
+                        println("a2")
                         compile.doFirst {
                             if (!conf.isEmpty) {
                                 compile.kotlinOptions.freeCompilerArgs +=
                                     "-Xplugin=${kotlinPlugin.files.first()}"
                             }
                         }
+                        println("a3")
                     }
 
                     project.tasks.withType(KotlinJvmCompile::class.java)
@@ -97,6 +107,9 @@ class AndroidXUiPlugin : Plugin<Project> {
                         }
 
                     project.tasks.withType(KotlinJsCompile::class.java)
+                        .configureEach(configure)
+
+                    project.tasks.withType(KotlinNativeCompile::class.java)
                         .configureEach(configure)
 
                     project.afterEvaluate {
@@ -151,16 +164,22 @@ class AndroidXUiPlugin : Plugin<Project> {
                 configureForMultiplatform()
             }
 
-            tasks.withType(KotlinCompile::class.java).configureEach { compile ->
+            /*tasks.withType(KotlinCompile::class.java).configureEach { compile ->
                 // Needed to enable `expect` and `actual` keywords
                 compile.kotlinOptions.freeCompilerArgs += "-Xmulti-platform"
             }
-
+*/
             tasks.withType(KotlinJsCompile::class.java).configureEach { compile ->
                 compile.kotlinOptions.freeCompilerArgs += listOf(
                     "-P", "plugin:androidx.compose.compiler.plugins.kotlin:generateDecoys=true"
                 )
             }
+
+            /*tasks.withType(KotlinNativeCompile::class.java).configureEach { compile ->
+                compile.kotlinOptions.freeCompilerArgs += listOf(
+                    "-P", "plugin:androidx.compose.compiler.plugins.kotlin:generateDecoys=true"
+                )
+            }*/
         }
 
         private fun Project.configureAndroidCommonOptions(testedExtension: TestedExtension) {

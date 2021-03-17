@@ -14,29 +14,14 @@
  * limitations under the License.
  */
 
-@file:OptIn(InternalComposeApi::class)
 package androidx.compose.runtime
 
-import androidx.compose.runtime.mock.Text
-import androidx.compose.runtime.mock.compositionTest
-import androidx.compose.runtime.mock.validate
-import kotlin.test.Test
+import androidx.compose.runtime.snapshots.SnapshotMutableState
 
-@Composable
-fun Container(content: @Composable () -> Unit) = content()
-
-@Stable
-@OptIn(InternalComposeApi::class)
-@Suppress("unused")
-class CompositionTests {
-    @Test
-    fun simple() = compositionTest {
-        compose {
-            Text("Hello!")
-        }
-
-        validate {
-            Text("Hello!")
-        }
-    }
-}
+/**
+ * Returns platform specific implementation based on [SnapshotMutableStateImpl].
+ */
+internal actual fun <T> createSnapshotMutableState(
+    value: T,
+    policy: SnapshotMutationPolicy<T>
+): SnapshotMutableState<T> = SnapshotMutableStateImpl(value, policy)

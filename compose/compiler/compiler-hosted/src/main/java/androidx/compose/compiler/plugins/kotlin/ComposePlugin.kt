@@ -100,28 +100,31 @@ class ComposeCommandLineProcessor : CommandLineProcessor {
         option: AbstractCliOption,
         value: String,
         configuration: CompilerConfiguration
-    ) = when (option) {
-        LIVE_LITERALS_ENABLED_OPTION -> configuration.put(
-            ComposeConfiguration.LIVE_LITERALS_ENABLED_KEY,
-            value == "true"
-        )
-        SOURCE_INFORMATION_ENABLED_OPTION -> configuration.put(
-            ComposeConfiguration.SOURCE_INFORMATION_ENABLED_KEY,
-            value == "true"
-        )
-        INTRINSIC_REMEMBER_OPTIMIZATION_ENABLED_OPTION -> configuration.put(
-            ComposeConfiguration.INTRINSIC_REMEMBER_OPTIMIZATION_ENABLED_KEY,
-            value == "true"
-        )
-        SUPPRESS_KOTLIN_VERSION_CHECK_ENABLED_OPTION -> configuration.put(
-            ComposeConfiguration.SUPPRESS_KOTLIN_VERSION_COMPATIBILITY_CHECK,
-            value == "true"
-        )
-        DECOYS_ENABLED_OPTION -> configuration.put(
-            ComposeConfiguration.DECOYS_ENABLED_KEY,
-            value == "true"
-        )
-        else -> throw CliOptionProcessingException("Unknown option: ${option.optionName}")
+    ) {
+//        throw IllegalStateException("arstarst")
+        return when (option) {
+            LIVE_LITERALS_ENABLED_OPTION -> configuration.put(
+                ComposeConfiguration.LIVE_LITERALS_ENABLED_KEY,
+                value == "true"
+            )
+            SOURCE_INFORMATION_ENABLED_OPTION -> configuration.put(
+                ComposeConfiguration.SOURCE_INFORMATION_ENABLED_KEY,
+                value == "true"
+            )
+            INTRINSIC_REMEMBER_OPTIMIZATION_ENABLED_OPTION -> configuration.put(
+                ComposeConfiguration.INTRINSIC_REMEMBER_OPTIMIZATION_ENABLED_KEY,
+                value == "true"
+            )
+            SUPPRESS_KOTLIN_VERSION_CHECK_ENABLED_OPTION -> configuration.put(
+                ComposeConfiguration.SUPPRESS_KOTLIN_VERSION_COMPATIBILITY_CHECK,
+                value == "true"
+            )
+            DECOYS_ENABLED_OPTION -> configuration.put(
+                ComposeConfiguration.DECOYS_ENABLED_KEY,
+                value == "true"
+            )
+            else -> throw CliOptionProcessingException("Unknown option: ${option.optionName}")
+        }
     }
 }
 
@@ -147,7 +150,7 @@ class ComposeComponentRegistrar : ComponentRegistrar {
             KotlinCompilerVersion.getVersion()?.let { version ->
                 val suppressKotlinVersionCheck = configuration.get(
                     ComposeConfiguration.SUPPRESS_KOTLIN_VERSION_COMPATIBILITY_CHECK,
-                    false
+                    true
                 )
                 if (!suppressKotlinVersionCheck && version != KOTLIN_VERSION_EXPECTATION) {
                     val msgCollector = configuration.get(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY)
@@ -182,7 +185,7 @@ class ComposeComponentRegistrar : ComponentRegistrar {
             )
             val decoysEnabled = configuration.get(
                 ComposeConfiguration.DECOYS_ENABLED_KEY,
-                false
+                true
             )
 
             StorageComponentContainerContributor.registerExtension(

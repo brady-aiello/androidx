@@ -25,6 +25,7 @@ import org.jetbrains.kotlin.backend.common.serialization.signature.IdSignatureSe
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.backend.js.lower.serialization.ir.JsManglerIr
 import org.jetbrains.kotlin.ir.backend.jvm.serialization.JvmManglerIr
+import org.jetbrains.kotlin.backend.konan.serialization.KonanManglerIr
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
@@ -33,6 +34,7 @@ import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.getAnnotation
 import org.jetbrains.kotlin.platform.js.isJs
 import org.jetbrains.kotlin.platform.jvm.isJvm
+import org.jetbrains.kotlin.platform.konan.isNative
 
 /**
  * Record signatures of the functions created by the [CreateDecoysTransformer] to match them in
@@ -49,6 +51,7 @@ class RecordDecoySignaturesTransformer(
     ModuleLoweringPass,
     DecoyTransformBase {
     private val mangler = when {
+        context.pluginContext.platform.isNative() -> KonanManglerIr
         context.pluginContext.platform.isJs() -> JsManglerIr
         context.pluginContext.platform.isJvm() -> JvmManglerIr
         else -> error("unsupported platform")

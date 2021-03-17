@@ -28,6 +28,16 @@ internal actual open class ThreadLocal<T> actual constructor(
     }
 }
 
+internal actual open class SnapshotThreadLocal<T> {
+    private var value: T? = null
+
+    actual fun get(): T? = value
+
+    actual fun set(value: T?) {
+        this.value = value
+    }
+}
+
 actual class AtomicReference<V> actual constructor(private var value: V) {
     actual fun get(): V = value
 
@@ -73,3 +83,14 @@ object DefaultChoreographerFrameClock : MonotonicFrameClock {
         TODO()
     }
 }
+
+internal actual object Trace {
+    actual fun beginSection(name: String): Any? {
+        return null
+    }
+
+    actual fun endSection(token: Any?) {
+    }
+}
+
+actual annotation class CheckResult actual constructor(actual val suggest: String)

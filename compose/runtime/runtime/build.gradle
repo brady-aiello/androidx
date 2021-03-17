@@ -65,9 +65,9 @@ if(AndroidXUiPlugin.isMultiplatformEnabled(project)) {
     kotlin {
         android()
         jvm("desktop")
-        js(IR) {
+        /*js(IR) {
             browser()
-        }
+        }*/
 
         macosX64()
 
@@ -85,7 +85,7 @@ if(AndroidXUiPlugin.isMultiplatformEnabled(project)) {
                 implementation(KOTLIN_STDLIB)
                 api(KOTLIN_COROUTINES_CORE)
             }
-            macosX64.dependencies {
+            macosX64Main.dependencies {
 //                implementation(KOTLIN_STDLIB)
 //                api(KOTLIN_COROUTINES_CORE)
             }

@@ -30,7 +30,8 @@ dependencies {
 
 TaskProvider<ShadowJar> shadowJar = tasks.register("embeddedPlugin", ShadowJar) {
     configurations = [project.configurations.compileClasspath]
-    relocate("com.intellij", "org.jetbrains.kotlin.com.intellij")
+//    relocate("com.intellij", "org.jetbrains.kotlin.com.intellij")
+    relocate("com.intellij", "com.intellij")
     archiveBaseName.set("embedded")
     archiveVersion.set("")
     destinationDirectory.set(new File(buildDir, "repackaged"))

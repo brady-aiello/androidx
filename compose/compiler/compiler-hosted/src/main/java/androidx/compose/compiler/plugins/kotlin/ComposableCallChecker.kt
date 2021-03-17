@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.js.resolve.diagnostics.findPsi
 import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.platform.js.isJs
 import org.jetbrains.kotlin.platform.jvm.isJvm
+import org.jetbrains.kotlin.platform.konan.isNative
 import org.jetbrains.kotlin.psi.KtAnnotatedExpression
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
 import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
@@ -78,8 +79,12 @@ open class ComposableCallChecker :
         platform: TargetPlatform,
         moduleDescriptor: ModuleDescriptor
     ) {
-        if (platform.isJvm() || platform.isJs()) {
+        if (platform.isNative()) {
             container.useInstance(this)
+        }
+        if (platform.isJvm() || platform.isJs()) {
+//            container.useInstance(this)
+            throw IllegalStateException("Only Native")
         }
     }
 
