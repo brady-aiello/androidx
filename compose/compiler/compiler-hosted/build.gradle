@@ -29,7 +29,7 @@ plugins {
 dependencies {
     compileOnly(KOTLIN_STDLIB)
     compileOnly("org.jetbrains.kotlin:kotlin-compiler:$KOTLIN_VERSION")
-    compileOnly("org.jetbrains.kotlin:backend.native:$KOTLIN_VERSION")
+    compileOnly("org.jetbrains.kotlin:backend.native:1.4.31-dev")
 }
 
 tasks.withType(KotlinCompile).configureEach {
